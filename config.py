@@ -75,20 +75,21 @@ SUPPORTED_DEVICES = ["Desktop", "Mobile"]
 
 # ---------------------------------------------------------------------------
 # Status colors  (execution status in the test run)
+# Softer, eye-friendly palette — accessible on both light and dark backgrounds
 # ---------------------------------------------------------------------------
 STATUS_COLORS = {
-    "Passed": "#28A745",
-    "Passed with Issue": "#90EE90",
-    "Passed (stubbed)": "#FFD700",
-    "Blocked": "#FFA500",
-    "Failed": "#FF4444",
-    "Failed (Medium)": "#FF4444",
-    "Failed (Highest)": "#CC0000",
-    "Not Applicable": "#808080",
-    "To Do": "#9370DB",
-    "No-Run": "#B0B0B0",
-    "Untested": "#B0B0B0",
-    "Retest": "#FFA07A",
+    "Passed": "#34B78F",
+    "Passed with Issue": "#6DC8A7",
+    "Passed (stubbed)": "#E8C547",
+    "Blocked": "#E8944A",
+    "Failed": "#D96459",
+    "Failed (Medium)": "#D96459",
+    "Failed (Highest)": "#C0392B",
+    "Not Applicable": "#A0A4AB",
+    "To Do": "#8E7CC3",
+    "No-Run": "#B8BCC5",
+    "Untested": "#B8BCC5",
+    "Retest": "#E6A06F",
 }
 
 # ---------------------------------------------------------------------------
@@ -102,12 +103,12 @@ NOT_APPLICABLE_STATUSES = ["Not Applicable"]
 BACKLOG_STATUSES = ["To Do", "No-Run", "Untested"]
 
 CATEGORY_COLORS = {
-    "Automated": "#28A745",
-    "In Progress": "#17A2B8",
-    "Blocked": "#FFA500",
-    "Failed": "#FF4444",
-    "Not Applicable": "#808080",
-    "Backlog": "#9370DB",
+    "Automated": "#34B78F",
+    "In Progress": "#5BA4CF",
+    "Blocked": "#E8944A",
+    "Failed": "#D96459",
+    "Not Applicable": "#A0A4AB",
+    "Backlog": "#8E7CC3",
 }
 
 # Ordered list for consistent display

@@ -8,6 +8,7 @@ The dashboard provides filters and breakdowns for both dimensions.
 
 from __future__ import annotations
 
+import pandas as pd
 import streamlit as st
 
 from config import (
@@ -18,6 +19,7 @@ from config import (
     TESTRAIL_API_KEY,
     TESTRAIL_PLAN_ID,
     TESTRAIL_PLAN_URL_TPL,
+    TESTRAIL_RUN_URL_TPL,
     TESTRAIL_URL,
     TESTRAIL_USER,
 )
@@ -29,6 +31,7 @@ from dashboard.charts import (
     render_device_comparison,
     render_gauge_chart,
     render_progress_bar,
+    render_run_status_bars,
     render_status_pie,
 )
 from dashboard.filters import render_filters
@@ -58,30 +61,82 @@ def _inject_css() -> None:
     st.markdown(
         """
         <style>
-        /* KPI cards */
+        /* ---- Global ---- */
+        .block-container { padding-top: 1.5rem; }
+
+        /* ---- KPI metric cards ---- */
         div[data-testid="stMetric"] {
-            background: #f8f9fa;
-            border: 1px solid #e9ecef;
-            border-radius: 8px;
-            padding: 12px 16px;
+            background: linear-gradient(135deg, #ffffff 0%, #f7f8fa 100%);
+            border: 1px solid #e2e6ea;
+            border-radius: 10px;
+            padding: 14px 18px;
+            box-shadow: 0 1px 3px rgba(0,0,0,.04);
+            transition: box-shadow .2s;
+        }
+        div[data-testid="stMetric"]:hover {
+            box-shadow: 0 2px 8px rgba(0,0,0,.08);
         }
         div[data-testid="stMetric"] label {
-            font-size: .85rem !important;
-            color: #6c757d;
+            font-size: .82rem !important;
+            color: #718096 !important;
+            text-transform: uppercase;
+            letter-spacing: .4px;
         }
         div[data-testid="stMetric"] [data-testid="stMetricValue"] {
-            font-size: 1.8rem !important;
+            font-size: 1.75rem !important;
             font-weight: 700;
+            color: #2D3748 !important;
         }
+
+        /* ---- Section headers ---- */
         .section-hdr {
-            font-size: 1.15rem;
+            font-size: 1.1rem;
             font-weight: 600;
-            color: #343a40;
-            margin-bottom: .5rem;
-            padding-bottom: .3rem;
-            border-bottom: 2px solid #28A745;
+            color: #2D3748;
+            margin: .6rem 0 .4rem 0;
+            padding-bottom: .35rem;
+            border-bottom: 2px solid #5BA4CF;
         }
-        section[data-testid="stSidebar"] { background: #f8f9fa; }
+
+        /* ---- Run cards ---- */
+        .run-card {
+            background: linear-gradient(135deg, #ffffff 0%, #f7f8fa 100%);
+            border: 1px solid #e2e6ea;
+            border-radius: 10px;
+            padding: 16px 18px;
+            box-shadow: 0 1px 3px rgba(0,0,0,.04);
+            margin-bottom: 4px;
+        }
+        .run-card h4 {
+            margin: 0 0 6px 0;
+            font-size: .95rem;
+            color: #2D3748;
+        }
+        .run-card .run-stat {
+            font-size: .82rem;
+            color: #718096;
+            margin-bottom: 2px;
+        }
+        .run-card .run-pct {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #34B78F;
+        }
+
+        /* ---- Sidebar ---- */
+        section[data-testid="stSidebar"] {
+            background: #F0F2F5;
+        }
+        section[data-testid="stSidebar"] [data-testid="stMarkdown"] p {
+            font-size: .88rem;
+        }
+
+        /* ---- Tabs ---- */
+        button[data-baseweb="tab"] {
+            font-weight: 500;
+        }
+
+        /* ---- Hide default footer ---- */
         footer { visibility: hidden; }
         </style>
         """,
@@ -129,6 +184,49 @@ def _render_kpis(kpis: dict) -> None:
     c4.metric("Backlog", f"{kpis['backlog']:,}")
     c5.metric("Blocked", f"{kpis['blocked']:,}")
     c6.metric("In Progress", f"{kpis['in_progress']:,}")
+
+
+# ------------------------------------------------------------------
+# Run Overview — one card per run with mini KPIs
+# ------------------------------------------------------------------
+
+def _render_run_overview(df: pd.DataFrame) -> None:
+    """Show a card for each of the 4 runs with individual KPIs."""
+    _section("Run Overview")
+
+    # Group data by run config (e.g. "desktop LV")
+    if "config" not in df.columns or df["config"].nunique() == 0:
+        st.info("No run configuration data available.")
+        return
+
+    configs = sorted(df["config"].dropna().unique().tolist())
+    cols = st.columns(len(configs) if configs else 1)
+
+    for i, cfg in enumerate(configs):
+        run_df = df[df["config"] == cfg]
+        run_kpis = compute_kpis(run_df)
+
+        # Get the first run_id for the link
+        run_id = run_df["run_id"].iloc[0] if not run_df.empty else None
+        run_url = TESTRAIL_RUN_URL_TPL.format(run_id=run_id) if run_id else ""
+
+        with cols[i]:
+            label = cfg if cfg else "Unknown"
+            link_md = f"[{label}]({run_url})" if run_url else label
+            st.markdown(
+                f'<div class="run-card">'
+                f'<h4>{label}</h4>'
+                f'<div class="run-pct">{run_kpis["automation_pct"]}%</div>'
+                f'<div class="run-stat">Automated: {run_kpis["automated"]} / {run_kpis["actionable_total"]}</div>'
+                f'<div class="run-stat">Backlog: {run_kpis["backlog"]}  &middot;  Blocked: {run_kpis["blocked"]}</div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+            if run_url:
+                st.caption(f"[Open in TestRail]({run_url})")
+
+    # Stacked bars comparing all 4 runs
+    render_run_status_bars(df)
 
 
 # ------------------------------------------------------------------
@@ -263,6 +361,8 @@ def render_dashboard() -> None:
 
     # --- Render sections ---
     _render_kpis(kpis)
+    st.markdown("")
+    _render_run_overview(filtered_df)
     st.markdown("")
     _render_progress(kpis)
     st.markdown("")
