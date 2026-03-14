@@ -15,8 +15,11 @@ from config import (
     PAGE_ICON,
     PAGE_LAYOUT,
     PAGE_TITLE,
+    TESTRAIL_API_KEY,
     TESTRAIL_PLAN_ID,
     TESTRAIL_PLAN_URL_TPL,
+    TESTRAIL_URL,
+    TESTRAIL_USER,
 )
 from dashboard.charts import (
     render_category_bar,
@@ -228,12 +231,24 @@ def render_dashboard() -> None:
     except Exception as exc:
         st.error(f"Failed to load data from TestRail: {exc}")
         st.info(
-            "Verify your credentials in the `.env` file and that the plan ID is correct."
+            "Verify your credentials in the Streamlit Secrets (or `.env` file) "
+            "and that the plan ID is correct."
+        )
+        st.code(
+            f"TESTRAIL_URL  = {TESTRAIL_URL}\n"
+            f"TESTRAIL_USER = {'(set)' if TESTRAIL_USER else '(empty!)'}\n"
+            f"TESTRAIL_KEY  = {'(set)' if TESTRAIL_API_KEY else '(empty!)'}\n"
+            f"PLAN_ID       = {TESTRAIL_PLAN_ID}",
+            language="text",
         )
         return
 
     if raw_df.empty:
         st.warning("No test data found in the specified test plan.")
+        st.info(
+            "The API connection succeeded but returned no usable data. "
+            "Check the diagnostic messages above (if any) for run/config details."
+        )
         return
 
     enriched_df = enrich_dataframe(raw_df)

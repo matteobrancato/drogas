@@ -8,8 +8,6 @@ Each run holds the same set of test cases executed under that configuration.
 
 from __future__ import annotations
 
-import re
-
 import pandas as pd
 import streamlit as st
 
@@ -42,12 +40,12 @@ def _get_client() -> TestRailClient:
 # ------------------------------------------------------------------
 
 def _build_status_map(client: TestRailClient) -> dict[int, str]:
-    """Map status_id → human-readable label."""
+    """Map status_id -> human-readable label."""
     return {s["id"]: s["label"] for s in client.get_statuses()}
 
 
 def _build_user_map(client: TestRailClient) -> dict[int, str]:
-    """Map user_id → display name."""
+    """Map user_id -> display name."""
     users = client.get_users()
     return {
         u["id"]: u.get("name") or u.get("email", "Unknown")
@@ -56,7 +54,7 @@ def _build_user_map(client: TestRailClient) -> dict[int, str]:
 
 
 def _build_dropdown_maps(client: TestRailClient) -> dict[str, dict[int, str]]:
-    """Build id→label maps for every custom dropdown field."""
+    """Build id->label maps for every custom dropdown field."""
     maps: dict[str, dict[int, str]] = {}
     try:
         for field in client.get_case_fields():
@@ -69,7 +67,10 @@ def _build_dropdown_maps(client: TestRailClient) -> dict[str, dict[int, str]]:
                 for line in items_str.strip().splitlines():
                     parts = line.split(",", 1)
                     if len(parts) == 2:
-                        items_map[int(parts[0].strip())] = parts[1].strip()
+                        try:
+                            items_map[int(parts[0].strip())] = parts[1].strip()
+                        except ValueError:
+                            continue
             if items_map:
                 maps[sys_name] = items_map
     except Exception:
@@ -78,19 +79,25 @@ def _build_dropdown_maps(client: TestRailClient) -> dict[str, dict[int, str]]:
 
 
 # ------------------------------------------------------------------
-# Config parser
+# Config parser — robust, tries config field then run name
 # ------------------------------------------------------------------
 
-def _parse_run_config(config_str: str) -> tuple[str, str]:
-    """Parse a run config string like ``'desktop LV'`` into (device, country).
+def _parse_run_config(config_str: str | None, run_name: str = "") -> tuple[str, str]:
+    """Parse device and country from a run's config or name.
 
-    Returns (device_display, country_display).  Falls back to
-    ``("Unknown", "Unknown")`` for unrecognised tokens.
+    Handles formats like:
+      - ``"desktop LV"``     (single config group)
+      - ``"desktop, LV"``    (comma-separated config groups)
+      - ``None``             (falls back to *run_name*)
+
+    Returns ``(device_display, country_display)``.
     """
-    if not config_str:
+    # Combine config and name into a single search text
+    text = f"{config_str or ''} {run_name}"
+    if not text.strip():
         return ("Unknown", "Unknown")
 
-    lower = config_str.lower()
+    lower = text.lower()
     device = "Unknown"
     country = "Unknown"
 
@@ -99,8 +106,9 @@ def _parse_run_config(config_str: str) -> tuple[str, str]:
             device = label
             break
 
+    # Country tokens are case-sensitive ("LT", "LV")
     for token, label in COUNTRY_TOKENS.items():
-        if token in config_str:          # case-sensitive for country codes
+        if token in text:
             country = label
             break
 
@@ -158,16 +166,34 @@ def load_test_plan_data(plan_id: int = TESTRAIL_PLAN_ID) -> pd.DataFrame:
     )
 
     rows: list[dict] = []
+    _diag_runs: list[str] = []  # for diagnostics
 
-    for entry in plan.get("entries", []):
+    entries = plan.get("entries", [])
+    if not entries:
+        st.warning(
+            f"Plan {plan_id} has no entries. "
+            f"Plan name: **{plan.get('name', '?')}** — "
+            f"Keys returned: {list(plan.keys())}"
+        )
+        return pd.DataFrame()
+
+    for entry in entries:
         suite_name = entry.get("name", "")
         for run in entry.get("runs", []):
             run_id = run["id"]
             run_name = run.get("name", "")
-            config_str = run.get("config", "")
-            device, country = _parse_run_config(config_str)
+            config_str = run.get("config")  # can be None
+            device, country = _parse_run_config(config_str, run_name)
 
-            if country not in SUPPORTED_COUNTRIES:
+            _diag_runs.append(
+                f"run_id={run_id}  name={run_name!r}  "
+                f"config={config_str!r}  -> device={device}, country={country}"
+            )
+
+            # Accept the run if we resolved a supported country,
+            # OR if country is Unknown (we keep everything and let
+            # the user filter later).
+            if country != "Unknown" and country not in SUPPORTED_COUNTRIES:
                 continue
 
             tests = client.get_tests(run_id)
@@ -202,7 +228,7 @@ def load_test_plan_data(plan_id: int = TESTRAIL_PLAN_ID) -> pd.DataFrame:
                     "run_id": run_id,
                     "run_name": run_name,
                     "suite_name": suite_name,
-                    "config": config_str,
+                    "config": config_str or "",
                     "assigned_to": assigned,
                     "jira_task_drg": jira_drg,
                     "jira_task_testim": jira_testim,
@@ -214,5 +240,11 @@ def load_test_plan_data(plan_id: int = TESTRAIL_PLAN_ID) -> pd.DataFrame:
                 }
                 row["jira_link"] = _best_jira_link(row)
                 rows.append(row)
+
+    # Show diagnostics if we got runs but no rows
+    if not rows and _diag_runs:
+        st.warning("Runs found but no test data loaded. Run details:")
+        for line in _diag_runs:
+            st.text(line)
 
     return pd.DataFrame(rows)
